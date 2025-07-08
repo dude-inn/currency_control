@@ -1,0 +1,20 @@
+# Виртуальное окружение
+venv/
+.env
+
+# Файлы базы данных SQLite
+*.sqlite3
+*.db
+
+# Кэш Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE (PyCharm)
+.idea/
+*.iml
+
+# Логи и временные файлы
+*.log
+*.tmp
