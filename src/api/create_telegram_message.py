@@ -230,7 +230,8 @@ def create_telegram_message(
         formatter.format_crypto_block(crypto_data)
     ]
 
-    footer = '🚓 <a href="https://t.me/currency_patrol">Валютный контроль</a>'
+    footer = '🚓 <a href="https://t.me/currency_patrol">ФинПатруль</a> | #USD #BTC #курс_рубля'
     message = header + "".join(block for block in blocks if block.strip()) + "\n" + footer
     logger.info("Сообщение Telegram сформировано")
     return message
+
