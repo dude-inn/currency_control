@@ -6,10 +6,11 @@ from contextlib import contextmanager
 import pytz
 
 from service.logger import logger
+from service.settings import DATABASE_SETTINGS
 
 
 class Database:
-    def __init__(self, db_path: str = "data.db") -> None:
+    def __init__(self, db_path: str = DATABASE_SETTINGS["db_path"]) -> None:
         self.db_path = db_path
         self._init_db()
 
@@ -100,7 +101,7 @@ class Database:
         logger.debug("Сообщение за сегодня не найдено")
         return None
 
-    def get_previous_day_message(self) -> Optional[Tuple[int, str]]:
+    def get_previous_day_message(self) -> Optional[Tuple[int, Dict[str, Any]]]:
         previous_day = self._current_date(days_ago=1)
         with self._transaction() as cursor:
             cursor.execute("""
@@ -109,9 +110,12 @@ class Database:
             """, (previous_day,))
             if result := cursor.fetchone():
                 logger.debug(f"Сообщение за предыдущий день ({previous_day}) получено")
-                return result["message_id"], result["data"]
+                return result["message_id"], json.loads(result["data"])
         logger.debug("Сообщение за предыдущий день не найдено")
         return None
+
+    def get_yesterday_last_data(self) -> Optional[Tuple[int, Dict[str, Any]]]:
+        return self.get_previous_day_message()
 
     def get_last_daily_data(self) -> Dict[str, Any]:
         yesterday = self._current_date(days_ago=1)
@@ -119,24 +123,17 @@ class Database:
             cursor.execute("SELECT data FROM daily_data WHERE date = ?", (yesterday,))
             if result := cursor.fetchone():
                 logger.debug(f"Дневные данные за {yesterday} получены")
-                return json.loads(result["data"])
+                try:
+                    return json.loads(result["data"])
+                except Exception as e:
+                    logger.error(f"Ошибка при декодировании daily_data: {e}")
         logger.debug(f"Дневные данные за {yesterday} отсутствуют")
         return {}
 
-    def get_yesterday_last_data(self) -> Optional[Tuple[int, Dict[str, Any]]]:
-        yesterday = self._current_date(days_ago=1)
-        with self._transaction() as cursor:
-            cursor.execute("""
-                SELECT message_id, data FROM messages 
-                WHERE date = ? ORDER BY id DESC LIMIT 1
-            """, (yesterday,))
-            if result := cursor.fetchone():
-                logger.debug(f"Последнее сообщение за вчера ({yesterday}) получено")
-                return result["message_id"], json.loads(result["data"])
-        logger.debug(f"Последнее сообщение за вчера ({yesterday}) не найдено")
-        return None
-
-    def save_history_data(self, ticker: str, value: float, data_type: str) -> None:
+    def save_history_data(self, ticker: str, value: Optional[float], data_type: str) -> None:
+        if value is None:
+            logger.warning(f"Попытка сохранить None для {ticker} ({data_type}) — пропущено")
+            return
         timestamp = datetime.now(pytz.timezone('Europe/Moscow')).isoformat()
         with self._transaction() as cursor:
             cursor.execute("""
@@ -151,7 +148,6 @@ class Database:
         target_iso = target_time.isoformat()
 
         with self._transaction() as cursor:
-            # 1. Пробуем найти в history_data
             cursor.execute("""
                 SELECT value FROM history_data 
                 WHERE ticker = ? AND type = ? AND timestamp <= ?
@@ -166,32 +162,35 @@ class Database:
                     logger.debug(f"Изменение {ticker} ({data_type}) за {delta}: {change}% (по history_data)")
                     return change
 
-            # 2. fallback: пробуем из daily_data (только если delta == 1 день)
             if delta == timedelta(days=1):
                 date_str = self._current_date(days_ago=1)
                 cursor.execute("SELECT data FROM daily_data WHERE date = ?", (date_str,))
                 row = cursor.fetchone()
                 if row:
                     try:
-                        data = json.loads(row["data"])
-                        past_value = data.get(ticker, {}).get("value")
-                        if past_value:
-                            change = round(((current_value - past_value) / past_value) * 100, 2)
-                            logger.debug(f"Изменение {ticker} ({data_type}) за {delta}: {change}% (по daily_data)")
-                            return change
+                        data = json.loads(row["data"])  # 🪄 добавили json.loads
+                        # ищем в одном из разделов
+                        for section in ("cbr_rates", "finance_data", "crypto_data"):
+                            if ticker in data.get(section, {}):
+                                past_value = data[section][ticker].get("value")
+                                if past_value:
+                                    change = round(((current_value - past_value) / past_value) * 100, 2)
+                                    logger.debug(
+                                        f"Изменение {ticker} ({data_type}) за {delta}: {change}% (по daily_data)")
+                                    return change
                     except Exception as e:
                         logger.warning(f"Ошибка при обработке daily_data fallback для {ticker}: {e}")
 
         logger.debug(f"Недостаточно данных для расчета изменения {ticker} ({data_type}) за {delta}")
         return None
 
-    def clear_old_data(self, days_threshold: int = 8) -> None:
+    def clear_old_data(self, days_threshold: int = DATABASE_SETTINGS["cleanup_days_threshold"]) -> None:
         cutoff_date = self._current_date(days_ago=days_threshold)
         with self._transaction() as cursor:
             cursor.execute("DELETE FROM messages WHERE date < ?", (cutoff_date,))
         logger.info(f"Старые данные до {cutoff_date} удалены")
 
-    def clear_invalid_data(self, min_length: int = 50) -> None:
+    def clear_invalid_data(self, min_length: int = DATABASE_SETTINGS["min_valid_length"]) -> None:
         with self._transaction() as cursor:
             cursor.execute("DELETE FROM messages WHERE LENGTH(data) < ?", (min_length,))
         logger.info(f"Удалены некорректные записи (длина данных < {min_length})")

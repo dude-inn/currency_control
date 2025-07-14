@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 import pytz
 
+load_dotenv()
 
 DEBUG = False
 
@@ -10,28 +11,113 @@ BASE_DIR = os.path.dirname(SERVICE_DIR)
 STATICFILES_DIRS = BASE_DIR + '/static'
 LOGO_DIRS = STATICFILES_DIRS + '/logo'
 
-load_dotenv()
-
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-
 ALPHA_VANTAGE_API_KEY = os.getenv('ALPHA_VANTAGE_API_KEY')
-
 TINKOFF_TOKEN = os.getenv('TINKOFF_TOKEN')
 ACCOUNT_ID = os.getenv('ACCOUNT_ID')
 LIVECOINWATCH_API = os.getenv('LIVECOINWATCH_API')
-
-TELEGRAM_CHANNEL_ID = "@currency_patrol"
-if DEBUG is True:
-    TELEGRAM_CHANNEL_ID = "@test_mix38"
-
 API_KEY = os.getenv('API_KEY')
 API_SECRET = os.getenv('API_SECRET')
 
-format_string = '%Y-%m-%d %H:%M:%S'
+TELEGRAM_CHANNEL_ID = "@currency_patrol" if not DEBUG else "@test_mix38"
 
 moscow_tz = pytz.timezone('Europe/Moscow')
+DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
-# Форматирование и локализация
+# 📊 Yahoo Finance тикеры
+YAHOO_FINANCIAL_ASSETS = [
+    {"ticker": "GC=F",      "name": "Золото"},
+    {"ticker": "BZ=F",      "name": "Нефть Brent"},
+    {"ticker": "EURUSD=X",  "name": "EUR-USD"}
+]
+
+ALLOWED_FINANCIAL_TICKERS = {asset["ticker"] for asset in YAHOO_FINANCIAL_ASSETS}
+
+# 💎 Криптовалюты
+CRYPTO_DISPLAY = {
+    'always_show': ['BTC', 'ETH', 'TONCOIN', 'BNB', 'SOL'],
+    'on_move_show': ['XRP', 'DOGE', 'ADA', 'MATIC', 'LINK', 'LTC', 'AVAX', 'DOT'],
+    'threshold_percent': 5.0
+}
+
+CRYPTO_API = {
+    "base_url": "https://api.livecoinwatch.com",
+    "request_delay": 0.5,
+    "default_currency": "USD",
+    "max_coins": 100
+}
+
+CRYPTO_SETTINGS = {
+    "default_currency": "USD",
+    "max_coins": 200,
+    "top_n": 5,
+    "always_show": ["BTC", "ETH", "USDT", "BNB", "TONCOIN", "SOL"],
+    "threshold_daily": 1.0,   # % — порог изменения за день для попадания в "🔥 Рывок за день"
+    "threshold_hourly": 1.0   # % — порог изменения за час для попадания в "🚀 Рывок за час"
+}
+
+# Обязательные монеты для публикации (всегда)
+CRYPTO_ALWAYS_SHOW = ["BTC", "ETH", "TONCOIN", "SOL", "BNB"]
+
+# Монеты, которые показываются только при значительном движении
+CRYPTO_ON_MOVE_SHOW = ["XRP", "DOGE", "ADA", "MATIC", "LINK", "LTC", "AVAX", "DOT"]
+
+# Порог для "значительного движения" (в %)
+CRYPTO_MOVE_THRESHOLD = 5.0
+
+# 📅 Планировщик
+SCHEDULER_SETTINGS = {
+    "first_message_delay_seconds": 10,
+    "edit_interval_minutes": 3,
+    "daily_post_time": {"hour": 0, "minute": 0},
+    "stop_edit_time": {"hour": 23, "minute": 59},
+    "last_edit_time": {"hour": 23, "minute": 57},
+    "debug": {
+        "first_run_delay_seconds": 10,
+        "edit_interval_seconds": 30,
+        "stop_edit_after_minutes": 5
+    }
+}
+
+DATABASE_SETTINGS = {
+    "db_path": "data.db",
+    "cleanup_days_threshold": 8,
+    "min_valid_length": 50
+}
+
+# 📈 Пороговые значения
+THRESHOLDS = {
+    "USD-RUB": (5, "🏅"),
+    "BTC": (1000, "🏅")
+}
+
+# 🔼/🔻 эмодзи
+CHANGE_EMOJIS = {
+    "crypto": {
+        "up": "🔼",
+        "down": "🔻",
+        "high_up": "🚀",
+        "high_down": "💥"
+    },
+    "default": {
+        "up": "▲",
+        "down": "▼"
+    }
+}
+
+# 🌐 Центробанк РФ
+CBR_API_URL = "https://www.cbr-xml-daily.ru/daily_json.js"
+
+# 💲 Фиатные валюты
+FIAT_CURRENCIES = [
+    "USD", "EUR", "CNY", "BYN", "CHF", "AED", "THB", "KZT"
+]
+
+SPECIAL_NOMINALS = {
+    "THB": 10
+}
+
+# 📆 Локализация
 LOCALE_SETTINGS = {
     'locale': 'ru_RU.UTF-8',
     'decimal_places': 2,
@@ -40,101 +126,74 @@ LOCALE_SETTINGS = {
     'datetime_format': '%Y-%m-%dT%H:%M:%S%z'
 }
 
-# Эмодзи и символы
-EMOJI = {
-    'flags': {
-        'USD': '🇺🇸',
-        'EUR': '🇪🇺',
-        'GBP': '🇬🇧',
-        'CNY': '🇨🇳',
-        'BYN': '🇧🇾',
-        'CHF': '🇨🇭',  # Швейцарский франк
-        'AED': '🇦🇪',  # Дирхам ОАЭ
-        'THB': '🇹🇭',  # Тайский бат
-        'KZT': '🇰🇿',  # Казахстанский тенге
-    },
-    'crypto': {
-        'BTC': '₿',
-        'ETH': '⟠',
-        'SOL': '◎',
-        'TON': '🔹',
-        'USDT': '💵',
-        'BNB': 'ⓑ',
-        'XRP': '✕',
-        'DOGE': '🐶'
-    },
-    'change': {
-        'up': "🟢",
-        'down': "🔴",
-        'neutral': "➖"
-    },
-    'sections': {
-        'oil': '🛢',
-        'indices': '📊',
-        'crypto': '🪙',
-        'bank': '🏦',
-        'clock': '⏱'
-    }
+# 🪙 Названия тикеров
+TICKER_NAMES = {
+    "GOLD": "Золото",
+    "BZ=F": "Нефть Brent",
+    "IMOEX.ME": "Индекс МосБиржи",
+    "EURUSD=X": "EUR-USD",
+    "USDBYN=X": "USD-BYN",
+    "USDKZT=X": "USD-KZT",
+    "USDUAH=X": "USD-UAH"
 }
 
-# Текстовые шаблоны
-MESSAGES = {
-    'header': "{bank} <b>Актуальные курсы валют и криптовалют на {date}</b>\n\n",
-    'sections': {
-        'cbr': "{bank} <b>Курсы ЦБ РФ:</b>\n",
-        'crypto': "\n{crypto} <b>Криптовалюты (к USD):</b>\n",
-        'oil': "\n{oil} <b>Цены на нефть:</b>\n",
-        'indices': "\n{indices} <b>Фондовые индексы:</b>\n"
-    },
-    'rate_lines': {
-        'cbr': "{flag} {curr}: <b>{value} RUB</b> ({change}п) {icon}\n",
-        'crypto': "{emoji} {crypto}: <b>{price}</b> ({change}%) {icon}\n",
-        'oil': "• Brent: <b>{price} USD/барр</b>\n",
-        'index': "• {name}: <b>{price}</b> ({change}п, {percent}%) {icon}\n"
-    },
-    'update_time': "{clock} <i>Обновлено: {time} (МСК)</i>\n",
-    'errors': {
-        'no_data': "⚠ Не удалось получить данные о курсах",
-        'api_error': "⚠ Ошибка при запросе данных из API"
-    }
+# 🇺🇸 Флаги валют
+CURRENCY_FLAGS = {
+    "USD-RUB": "🇺🇸",
+    "EUR-RUB": "🇪🇺",
+    "CNY-RUB": "🇨🇳"
 }
 
-# Настройки данных
-DATA_SETTINGS = {
-    'fiat_currencies': ['USD', 'EUR', 'GBP', 'CNY', 'BYN', 'CHF', 'AED', 'THB', 'KZT'],
-    'main_cryptos': ['BTC', 'ETH', 'BNB', 'SOL', 'XRP'],
-    'secondary_cryptos': ['USDT', 'TON', 'DOGE'],
-    'indices': {
-        '^GSPC': 'S&P 500',
-        '^IXIC': 'NASDAQ'
-    },
-    'crypto_base_currency': 'USD'
+# 💰 Эмодзи инструментов
+FINANCE_EMOJIS = {
+    "Золото": "👑",
+    "Нефть Brent": "🛢️",
+    "Индекс МосБиржи": "🇷🇺",
+    "EUR-USD": "🇺🇸",
+    "USD-BYN": "🇧🇾",
+    "USD-KZT": "🇰🇿",
+    "USD-UAH": "🇺🇦"
 }
 
-# API Endpoints
+CRYPTO_EMOJIS = {
+    "BTC": "₿",
+    "ETH": "⧫",
+    "XRP": "✕",
+    "BNB": "Ƀ",
+    "SOL": "☀️",
+    "DOGE": "🐶",
+    "TRX": "🎭",
+    "ADA": "₳",
+    "TONCOIN": "💎",
+    "PEPE": "🐸",
+    "MATIC": "🟪",
+    "LINK": "🔗",
+    "LTC": "⚡",
+    "AVAX": "🏔️",
+    "DOT": "🌐"
+}
+
+DEFAULT_EMOJIS = {
+    'currency': '💱',
+    'finance': '🌐',
+    'crypto': '🪙'
+}
+
+# Разрешённые пары валют
+ALLOWED_CURRENCY_PAIRS = {"USD-RUB", "EUR-RUB", "CNY-RUB"}
+
+# 📲 API Endpoints
 API_ENDPOINTS = {
     'alpha_vantage': {
         'oil': "https://www.alphavantage.co/query?function=BRENT&interval=daily&apikey={api_key}",
         'stocks': "https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={api_key}"
     },
-    'cbr': "https://www.cbr-xml-daily.ru/daily_json.js",
-    'crypto': "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,the-open-network,tether,binancecoin,ripple,dogecoin&vs_currencies={base_currency}&include_24hr_change=true"
-}
-
-# Настройки планировщика
-SCHEDULER_CONFIG = {
-    'main_post': {
-        'hour': 8,
-        'minute': 0,
-        'timezone': 'Europe/Moscow'
-    },
-    'updates': {
-        'interval': 5,  # minutes
-        'start': {'hour': 8, 'minute': 5},
-        'end': {'hour': 7, 'minute': 57}
-    },
-    'debug': {
-        'first_run_delay': 3,  # seconds
-        'update_interval': 1  # minutes
+    'cbr': CBR_API_URL,
+    'livecoinwatch': {
+        'coins_list': "https://api.livecoinwatch.com/coins/list"
     }
 }
+
+REQUIRED_CURRENCIES = [
+    "USD", "EUR", "CNY"
+]

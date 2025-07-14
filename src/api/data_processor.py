@@ -4,28 +4,10 @@ import json
 from datetime import timedelta
 from database import Database
 
-# Константы для пороговых значений
-THRESHOLDS = {
-    "USD-RUB": (5, "🏅"),
-    "BTC": (1000, "🏅")
-}
+from service.settings import THRESHOLDS, CHANGE_EMOJIS
 
-# Константы для форматирования изменений
-CHANGE_EMOJIS = {
-    "crypto": {
-        "up": "🔼",
-        "down": "🔻",
-        "high_up": "🚀",
-        "high_down": "💥"
-    },
-    "default": {
-        "up": "▲",
-        "down": "▼"
-    }
-}
 
 def calculate_percentage_change(old_value: Optional[float], new_value: Optional[float]) -> Optional[float]:
-    """Вычисляет процентное изменение с учетом округления"""
     logger.debug(f'Old_value: {old_value}, new_value: {new_value}')
     if None in (old_value, new_value) or old_value == 0:
         return None
@@ -49,29 +31,12 @@ def _get_change_emoji(change: float, is_crypto: bool) -> str:
     return base_emoji
 
 
-def _format_crypto_change(change: float) -> str:
-    abs_change = abs(change)
-    emoji = "🟢" if change > 0 else "🔻"
-
-    if abs_change > 10:
-        emoji += "🚀" if change > 0 else "💥"
-    elif abs_change > 5:
-        emoji = emoji * 2
-
-    return f"{emoji} {abs_change:.1f}%"
-
-
-def _format_default_change(change: float) -> str:
-    emoji = "▲" if change > 0 else "▼"
-    return f"{emoji} {abs(change):.1f}%"
-
-
 def format_change(value_now: float, value_then: float) -> Optional[str]:
     try:
         if value_now is None or value_then is None or value_then == 0:
             return None
         change = ((value_now - value_then) / value_then) * 100
-        return f"{change:.2f}%"  # Всегда строка!
+        return f"{change:.2f}%"
     except Exception as e:
         logger.warning(f"Ошибка при вычислении изменения: {e}")
         return None
@@ -121,8 +86,17 @@ def process_data(new_data: Dict[str, Any],
     if not isinstance(old_data, dict):
         old_data = {}
 
-    for currency, new_value in new_data.items():
+    for currency, new_val_raw in new_data.items():
         try:
+            if new_val_raw is None:
+                continue
+
+            # если в new_val_raw уже словарь — достаём .get("value")
+            if isinstance(new_val_raw, dict):
+                new_value = new_val_raw.get("value")
+            else:
+                new_value = new_val_raw
+
             if new_value is None:
                 continue
 
@@ -138,11 +112,10 @@ def process_data(new_data: Dict[str, Any],
 
             processed[currency] = {
                 "value": _round_crypto_value(new_value, currency) if is_crypto else new_value,
-                "change": format_change(change, is_crypto),
+                "change": format_change(new_value, old_value),
                 "threshold_emoji": check_threshold(new_value, *THRESHOLDS.get(currency, (0, ""))),
             }
 
-            # Добавление изменений за интервалы
             interval_changes = get_changes_for_intervals(currency, new_value, source_type)
             processed[currency].update(interval_changes)
 

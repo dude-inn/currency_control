@@ -1,12 +1,9 @@
 import requests
 from typing import Dict, Optional, Any
 from dataclasses import dataclass
-from service.logger import logger
 
-# Конфигурационные константы
-CBR_API_URL = "https://www.cbr-xml-daily.ru/daily_json.js"
-REQUIRED_CURRENCIES = ["USD", "EUR", "CNY", "AED", "THB"]
-SPECIAL_NOMINALS = {"THB": 10}  # Валюты с особым номиналом
+from service.logger import logger
+from service.settings import CBR_API_URL, REQUIRED_CURRENCIES, SPECIAL_NOMINALS
 
 
 @dataclass

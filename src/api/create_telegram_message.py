@@ -2,63 +2,14 @@ from service.logger import logger
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Tuple, Optional
 
-TICKER_NAMES = {
-    "GOLD": "Золото",
-    "BZ=F": "Нефть Brent",
-    "^GSPC": "S&P 500",
-    "^IXIC": "NASDAQ",
-    "IMOEX.ME": "Индекс МосБиржи",
-    "EURUSD=X": "EUR-USD",
-    "USDBYN=X": "USD-BYN",
-    "USDKZT=X": "USD-KZT",
-    "USDUAH=X": "USD-UAH"
-}
-
-CURRENCY_FLAGS = {
-    "USD-RUB": "🇺🇸",
-    "EUR-RUB": "🇪🇺",
-    "CNY-RUB": "🇨🇳",
-    "AED-RUB": "🇦🇪",
-    "THB-RUB": "🇹🇭"
-}
-
-FINANCE_EMOJIS = {
-    "Золото": "👑",
-    "Нефть Brent": "🛢️",
-    "S&P 500": "📈",
-    "NASDAQ": "📊",
-    "Индекс МосБиржи": "🇷🇺",
-    "EUR-USD": "🇺🇸",
-    "USD-BYN": "🇧🇾",
-    "USD-KZT": "🇰🇿",
-    "USD-UAH": "🇺🇦"
-}
-
-CRYPTO_EMOJIS = {
-    "BTC": "₿",
-    "ETH": "⧫",
-    "XRP": "✕",
-    "BNB": "Ƀ",
-    "SOL": "☀️",
-    "DOGE": "🐶",
-    "TRX": "🎭",
-    "USDC": "💵",
-    "ADA": "₳",
-    "TONCOIN": "💎",
-    "SHIB": "柴",
-    "PEPE": "🐸",
-    "MATIC": "🟪",
-    "LINK": "🔗",
-    "LTC": "⚡",
-    "AVAX": "🏔️",
-    "DOT": "🌐"
-}
-
-DEFAULT_EMOJIS = {
-    'currency': '💱',
-    'finance': '🌐',
-    'crypto': '🪙'
-}
+from service.settings import (
+    ALLOWED_CURRENCY_PAIRS,
+    YAHOO_FINANCIAL_ASSETS,
+    CURRENCY_FLAGS,
+    FINANCE_EMOJIS,
+    CRYPTO_EMOJIS,
+    DEFAULT_EMOJIS,
+)
 
 
 class EmojiResolver:
@@ -105,7 +56,6 @@ class Formatter:
     def _format_change(label: str, change: Any, is_crypto: bool) -> Optional[str]:
         if change is None:
             return None
-
         try:
             number = float(str(change).replace("%", "").replace(",", ".").replace("−", "-").strip())
         except Exception as e:
@@ -113,15 +63,11 @@ class Formatter:
             return None
 
         if abs(number) <= 0.01:
-            return f"{label}:    0.00%"  # Статичная ширина
+            return f"{label}➖0.00%"
 
-        if is_crypto:
-            arrow = "🟢" if number > 0 else "🔻"
-        else:
-            arrow = "▲" if number > 0 else "▼"
-
-        formatted_number = f"{abs(number):5.2f}%"
-        return f"{label}: {arrow} {formatted_number}"
+        arrow = "🟢" if is_crypto and number > 0 else "🔻" if is_crypto else "▲" if number > 0 else "▼"
+        formatted_number = f"{abs(number):.2f}%"
+        return f"{label}{arrow}{formatted_number}"
 
     def _format_line(
         self,
@@ -133,7 +79,10 @@ class Formatter:
         emoji: str = "",
         is_crypto: bool = False
     ) -> str:
-        logger.debug(f"Formatting line for {name} with value={value}, 1h={change_1h}, 1d={change_1d}, 1w={change_1w}")
+        if name == "Золото":
+            value = f"{value} USD/унция"
+        elif name == "Нефть Brent":
+            value = f"{value} USD/баррель"
 
         changes = []
         for label, change in [("h", change_1h), ("d", change_1d), ("w", change_1w)]:
@@ -141,18 +90,16 @@ class Formatter:
             if formatted:
                 changes.append(formatted)
 
-        # Горизонтальное выравнивание с фиксированными пробелами
-        changes_str = "     " + "   ".join(changes) if changes else ""
-
-        return f"{emoji} {name}: <code>{value}</code>\n{changes_str}\n"
+        changes_str = "     " + " ".join(changes) if changes else ""
+        return f"{emoji} <b>{name}</b>: <code>{value}</code>\n{changes_str}\n"
 
     def format_currency_block(self, rates: Dict[str, Dict[str, Any]]) -> str:
         if not rates:
-            logger.warning("Нет данных для блока валют")
-            return "❌ Нет данных о курсах ЦБ РФ.\n"
-
-        lines = ["<b>💰 Курсы ЦБ РФ:</b>\n"]
+            return "❌ Нет данных о курсах ЦБ РФ."
+        lines = ["<b><u>💰 Курсы ЦБ РФ:</u></b>"]
         for pair, data in rates.items():
+            if pair not in ALLOWED_CURRENCY_PAIRS:
+                continue
             value = data.get("value")
             if value is None:
                 continue
@@ -165,19 +112,19 @@ class Formatter:
                 emoji=EmojiResolver.get_currency_flag(pair),
                 is_crypto=False
             ))
-        return "".join(lines) + "\n" if len(lines) > 1 else ""
+        return "\n".join(lines)
 
     def format_financial_block(self, data: Dict[str, Dict[str, Any]]) -> str:
         if not data:
-            logger.warning("Нет данных для финансовых инструментов")
-            return "❌ Нет данных о финансовых инструментах.\n"
-
-        lines = ["<b>📊 Финансовые инструменты:</b>\n"]
-        for ticker, entry in data.items():
+            return "❌ Нет данных о финансовых инструментах."
+        allowed_names = {asset["name"] for asset in YAHOO_FINANCIAL_ASSETS}
+        lines = ["<b><u>📊 Финансовые инструменты:</u></b>"]
+        for name, entry in data.items():
+            if name not in allowed_names:
+                continue
             value = entry.get("value")
             if value is None:
                 continue
-            name = TICKER_NAMES.get(ticker, ticker)
             lines.append(self._format_line(
                 name=name,
                 value=self._format_number(value),
@@ -187,31 +134,51 @@ class Formatter:
                 emoji=EmojiResolver.get_finance_emoji(name),
                 is_crypto=False
             ))
-        return "".join(lines) + "\n" if len(lines) > 1 else ""
+        return "\n".join(lines)
 
     def format_crypto_block(self, data: Dict[str, Dict[str, Any]]) -> str:
         if not data:
-            logger.warning("Нет данных для криптовалют")
             return "❌ Нет данных о криптовалютах.\n"
 
-        lines = ["<b>💎 Криптовалюты к $:</b>\n"]
-        for code, entry in data.items():
-            value = entry.get("value")
-            if value is None:
-                continue
-            precision = 2 if code == "BTC" else 4
-            rounded = self._round(value, precision)
-            formatted_value = self._format_number(rounded)
-            lines.append(self._format_line(
-                name=code,
-                value=formatted_value,
-                change_1h=entry.get("change_1h"),
-                change_1d=entry.get("change_1d"),
-                change_1w=entry.get("change_1w"),
-                emoji=EmojiResolver.get_crypto_emoji(code),
-                is_crypto=True
-            ))
-        return "".join(lines)
+        parts = []
+
+        always = data.get("always", {})
+        if always:
+            lines = ["<b><u>💎 Криптовалюты к доллару:</u></b>"]
+            for code, entry in always.items():
+                lines.append(self._format_crypto_line(code, entry))
+            parts.append("\n".join(lines))
+
+        daily_spikes = data.get("daily_spikes", {})
+        if daily_spikes:
+            lines = ["<b><u>🔥 Рывок за день:</u></b>"]
+            for code, entry in daily_spikes.items():
+                lines.append(self._format_crypto_line(code, entry))
+            parts.append("\n".join(lines))
+
+        hourly_spikes = data.get("hourly_spikes", {})
+        if hourly_spikes:
+            lines = ["<b><u>🚀 Рывок за час:</u></b>"]
+            for code, entry in hourly_spikes.items():
+                lines.append(self._format_crypto_line(code, entry))
+            parts.append("\n".join(lines))
+
+        return "\n\n".join(parts)
+
+    def _format_crypto_line(self, code: str, entry: Dict[str, Any]) -> str:
+        value = entry.get("value")
+        precision = 2 if code == "BTC" else 4
+        rounded = self._round(value, precision)
+        formatted_value = self._format_number(rounded)
+        return self._format_line(
+            name=code,
+            value=formatted_value,
+            change_1h=entry.get("change_1h"),
+            change_1d=entry.get("change_1d"),
+            change_1w=entry.get("change_1w"),
+            emoji=EmojiResolver.get_crypto_emoji(code),
+            is_crypto=True
+        )
 
 
 def create_telegram_message(
@@ -221,7 +188,7 @@ def create_telegram_message(
 ) -> str:
     logger.info("Создание Telegram-сообщения")
     date_str, time_str = TimeUtils.get_moscow_time()
-    header = f"<b>🚓 {date_str}</b> 🕒 Upd: <code>{time_str} МСК</code>\n\n"
+    header = f"<b>🚓 {date_str}</b> 🕒 Upd: <code>{time_str} МСК</code>"
 
     formatter = Formatter()
     blocks = [
@@ -231,7 +198,5 @@ def create_telegram_message(
     ]
 
     footer = '🚓 <a href="https://t.me/currency_patrol">ФинПатруль</a> | #USD #BTC #курс_рубля'
-    message = header + "".join(block for block in blocks if block.strip()) + "\n" + footer
-    logger.info("Сообщение Telegram сформировано")
-    return message
-
+    message = "\n\n".join(block.strip() for block in blocks if block.strip())
+    return f"{header}\n\n{message}\n\n{footer}"

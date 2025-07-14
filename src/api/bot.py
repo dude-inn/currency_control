@@ -9,10 +9,10 @@ from create_telegram_message import create_telegram_message
 from get_cb_data import get_currency_rates
 from get_yahoo_data import get_prices as get_yahoo_prices
 from get_crypto_data import get_prices as get_crypto_prices
-from service.settings import TELEGRAM_CHANNEL_ID, DEBUG
 import json
 from database import Database
 from data_processor import process_data
+from service.settings import TELEGRAM_CHANNEL_ID, DEBUG, SCHEDULER_SETTINGS
 
 
 class TelegramBot:
@@ -75,31 +75,66 @@ class TelegramBot:
         logger.info("Очистка завершена.")
 
     async def fetch_and_process_data(self):
-        """Получает и обрабатывает данные, а также сохраняет исторические значения."""
-        cbr_rates, finance_data, crypto_data = await self.fetch_data()
+        cbr_rates = get_currency_rates()
+        finance_data = await get_yahoo_prices()
+        crypto_data = await get_crypto_prices()
 
-        yesterday_data = self.db.get_yesterday_last_data()
-        old_data = {}
+        yesterday_data_raw = self.db.get_last_daily_data()
+        yesterday_data = {}
 
-        if yesterday_data:
-            _, old_data_str = yesterday_data
+        if isinstance(yesterday_data_raw, str):
             try:
-                if isinstance(old_data_str, str):
-                    old_data = json.loads(old_data_str)
-                elif isinstance(old_data_str, dict):
-                    old_data = old_data_str
+                yesterday_data = json.loads(yesterday_data_raw)
             except json.JSONDecodeError as e:
-                logger.error(f"Ошибка декодирования old_data: {e}")
-                old_data = {}
+                logger.error(f"Ошибка декодирования yesterday_data: {e}")
+        elif isinstance(yesterday_data_raw, dict):
+            yesterday_data = yesterday_data_raw
 
-        processed_cbr_rates = process_data(cbr_rates, old_data.get("cbr_rates", {}))
-        processed_finance_data = process_data(finance_data, old_data.get("finance_data", {}))
-        processed_crypto_data = process_data(crypto_data, old_data.get("crypto_data", {}), is_crypto=True)
+        if not cbr_rates and 'cbr_rates' in yesterday_data:
+            logger.warning("📄 Нет свежих данных ЦБ РФ, используем данные из БД")
+            cbr_rates = {k: v['value'] for k, v in yesterday_data['cbr_rates'].items()}
 
-        # 💾 Сохраняем исторические данные
+        if not finance_data and 'finance_data' in yesterday_data:
+            logger.warning("📄 Нет свежих данных фин. инструментов, используем данные из БД")
+            finance_data = {k: v['value'] for k, v in yesterday_data['finance_data'].items()}
+
+        # 👇 вот тут меняем работу с crypto_data
+        flat_crypto = {}
+        if crypto_data:
+            # оставляем оригинальные daily_spikes/hourly_spikes
+            daily_spikes = crypto_data.get("daily_spikes", {})
+            hourly_spikes = crypto_data.get("hourly_spikes", {})
+            always = crypto_data.get("always", {})
+
+            # для always — обрабатываем как раньше
+            flat_crypto.update(always)
+
+            # для остальных сохраняем отдельно
+            self.daily_spikes = daily_spikes
+            self.hourly_spikes = hourly_spikes
+
+        logger.debug(f"✅ flat_crypto: {flat_crypto}")
+
+        processed_cbr_rates = process_data(
+            cbr_rates, yesterday_data.get("cbr_rates", {})
+        )
+        processed_finance_data = process_data(
+            finance_data, yesterday_data.get("finance_data", {})
+        )
+        processed_crypto_data = process_data(
+            flat_crypto, yesterday_data.get("crypto_data", {}), is_crypto=True
+        )
+
+        # добавляем обратно daily_spikes и hourly_spikes (с данными из API)
+        processed_crypto_data_full = {
+            "always": processed_crypto_data,
+            "daily_spikes": self.daily_spikes,
+            "hourly_spikes": self.hourly_spikes,
+        }
+
         self.save_history_snapshot(processed_cbr_rates, processed_finance_data, processed_crypto_data)
 
-        return processed_cbr_rates, processed_finance_data, processed_crypto_data
+        return processed_cbr_rates, processed_finance_data, processed_crypto_data_full
 
     def save_history_snapshot(self, cbr_rates, finance_data, crypto_data):
         """Сохраняет значения в таблицу истории."""
@@ -182,19 +217,60 @@ class TelegramBot:
     def _setup_debug_jobs(self):
         """Настраивает задачи для режима отладки."""
         now = datetime.now()
-        self.scheduler.add_job(self.send_daily_message, trigger="date", run_date=now + timedelta(seconds=10))
-        self.scheduler.add_job(self.edit_message, trigger="interval", seconds=30)
-        self.scheduler.add_job(self.stop_editing, trigger="date", run_date=now + timedelta(minutes=5))
+        self.scheduler.add_job(self.send_daily_message, trigger="date",
+                               run_date=now + timedelta(seconds=SCHEDULER_SETTINGS["debug"]["first_run_delay_seconds"]))
+        self.scheduler.add_job(self.edit_message, trigger="interval",
+                               seconds=SCHEDULER_SETTINGS["debug"]["edit_interval_seconds"])
+        self.scheduler.add_job(self.stop_editing, trigger="date",
+                               run_date=now + timedelta(minutes=SCHEDULER_SETTINGS["debug"]["stop_edit_after_minutes"]))
 
     def _setup_production_jobs(self):
         """Настраивает задачи для продакшена."""
-        if not self.db.get_today_message():
-            self.scheduler.add_job(self.send_daily_message, trigger="date", run_date=datetime.now() + timedelta(seconds=10))
 
-        self.scheduler.add_job(self.send_daily_message, trigger="cron", hour=0, minute=0, timezone="Europe/Moscow")
-        self.scheduler.add_job(self.edit_message, trigger="interval", minutes=3)
-        self.scheduler.add_job(self.edit_message, trigger="cron", hour=23, minute=57, timezone="Europe/Moscow")
-        self.scheduler.add_job(self.stop_editing, trigger="cron", hour=23, minute=59, timezone="Europe/Moscow")
+        # если за сегодня ещё нет сообщения — отправляем через 10 секунд
+        if not self.db.get_today_message():
+            delay = timedelta(seconds=SCHEDULER_SETTINGS["first_message_delay_seconds"])
+            run_time = datetime.now() + delay
+            logger.info(f"Сообщение за сегодня не найдено. Запланирована публикация через {delay.seconds} секунд.")
+            self.scheduler.add_job(
+                self.send_daily_message,
+                trigger="date",
+                run_date=run_time
+            )
+
+        # основное сообщение по расписанию
+        self.scheduler.add_job(
+            self.send_daily_message,
+            trigger="cron",
+            hour=SCHEDULER_SETTINGS["daily_post_time"]["hour"],
+            minute=SCHEDULER_SETTINGS["daily_post_time"]["minute"],
+            timezone="Europe/Moscow"
+        )
+
+        # периодическое редактирование в течение дня
+        self.scheduler.add_job(
+            self.edit_message,
+            trigger="interval",
+            minutes=SCHEDULER_SETTINGS["edit_interval_minutes"]
+        )
+
+        # последняя правка перед завершением дня
+        self.scheduler.add_job(
+            self.edit_message,
+            trigger="cron",
+            hour=SCHEDULER_SETTINGS["last_edit_time"]["hour"],
+            minute=SCHEDULER_SETTINGS["last_edit_time"]["minute"],
+            timezone="Europe/Moscow"
+        )
+
+        # останавливаем редактирование
+        self.scheduler.add_job(
+            self.stop_editing,
+            trigger="cron",
+            hour=SCHEDULER_SETTINGS["stop_edit_time"]["hour"],
+            minute=SCHEDULER_SETTINGS["stop_edit_time"]["minute"],
+            timezone="Europe/Moscow"
+        )
 
     def stop_scheduler(self):
         """Останавливает планировщик."""
