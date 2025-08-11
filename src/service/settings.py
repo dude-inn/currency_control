@@ -18,6 +18,10 @@ ACCOUNT_ID = os.getenv('ACCOUNT_ID')
 LIVECOINWATCH_API = os.getenv('LIVECOINWATCH_API')
 API_KEY = os.getenv('API_KEY')
 API_SECRET = os.getenv('API_SECRET')
+CRYPTOPANIC_TOKEN = os.getenv('CRYPTOPANIC_TOKEN')
+YANDEX_TRANSLATE_API_KEY = os.getenv('YANDEX_TRANSLATE_API_KEY')
+YANDEX_FOLDER_ID = os.getenv('YANDEX_FOLDER_ID')
+
 
 TELEGRAM_CHANNEL_ID = "@currency_patrol" if not DEBUG else "@test_mix38"
 

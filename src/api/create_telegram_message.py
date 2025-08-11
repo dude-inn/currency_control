@@ -190,6 +190,8 @@ def create_telegram_message(
     date_str, time_str = TimeUtils.get_moscow_time()
     header = f"<b>🚓 {date_str}</b> 🕒 Upd: <code>{time_str} МСК</code>"
 
+    PAY_WORLD_REF_LINK = "https://trk.ppdu.ru/click/kmN6RlAR?erid=2SDnjdQghsC"
+
     formatter = Formatter()
     blocks = [
         formatter.format_currency_block(cbr_rates),
@@ -197,6 +199,19 @@ def create_telegram_message(
         formatter.format_crypto_block(crypto_data)
     ]
 
-    footer = '🚓 <a href="https://t.me/currency_patrol">ФинПатруль</a> | #USD #BTC #курс_рубля'
+    # Короткое УТП в одну строчку, чтобы не перегружать пост
+    pay_world_teaser = (
+        '💳 <b>Плати по миру</b> — виртуальная USD-карта для оплат за рубежом: '
+        'моментальный выпуск в Telegram (~2 мин), пополнение через СБП 0%, '
+        'первый год без абонплаты, приветственный бонус <b>$10</b>. '
+        f'<a href="{PAY_WORLD_REF_LINK}">Оформить карту</a>'
+    )
+
+    footer = (
+        '🚓 <a href="https://t.me/currency_patrol">ФинПатруль</a> | #USD #BTC #курс_рубля\n'
+        f'{pay_world_teaser}'
+    )
+
     message = "\n\n".join(block.strip() for block in blocks if block.strip())
     return f"{header}\n\n{message}\n\n{footer}"
+
