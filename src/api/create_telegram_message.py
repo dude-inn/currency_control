@@ -190,26 +190,32 @@ def create_telegram_message(
     date_str, time_str = TimeUtils.get_moscow_time()
     header = f"<b>🚓 {date_str}</b> 🕒 Upd: <code>{time_str} МСК</code>"
 
-    PAY_WORLD_REF_LINK = "https://trk.ppdu.ru/click/kmN6RlAR?erid=2SDnjdQghsC"
+    # Реклама: Школа Московской Биржи (реф-ссылка + промокод FINGRAM -20%)
+    MOSBIRJA_REF_LINK = (
+        "https://trk.ppdu.ru/click?uid=283460&oid=d126c5b0-9c7d-4902-b446-4a4306945be1&erid=LjN8KWdmY"
+    )
 
     formatter = Formatter()
     blocks = [
         formatter.format_currency_block(cbr_rates),
         formatter.format_financial_block(finance_data),
-        formatter.format_crypto_block(crypto_data)
+        formatter.format_crypto_block(crypto_data),
     ]
 
-    # Короткое УТП в одну строчку, чтобы не перегружать пост
-    pay_world_teaser = (
-        '💳 <b>Плати по миру</b> — виртуальная USD-карта для оплат за рубежом: '
-        'моментальный выпуск в Telegram (~2 мин), пополнение через СБП 0%, '
-        'первый год без абонплаты, приветственный бонус <b>$10</b>. '
-        f'<a href="{PAY_WORLD_REF_LINK}">Оформить карту</a>'
+    # Короткое УТП (одна строка, без перегруза)
+    moex_teaser = (
+        '🎓 <b>Школа Московской Биржи</b> — курсы по инвестициям и финграмотности. '
+        'Для подписчиков <b>−20%</b> по промокоду <code>FINGRAM</code>*; есть бесплатные занятия. '
+        f'<a href="{MOSBIRJA_REF_LINK}">Выбрать курс</a>'
+    )
+    # Примечание в подписи (кратко, чтобы не раздувать пост)
+    moex_note = (
+        '*Скидка −20% не действует в периоды спецакций (День знаний, Черная пятница, Новогодние распродажи).'
     )
 
     footer = (
         '🚓 <a href="https://t.me/currency_patrol">ФинПатруль</a> | #USD #BTC #курс_рубля\n'
-        f'{pay_world_teaser}'
+        f'{moex_teaser}\n{moex_note}'
     )
 
     message = "\n\n".join(block.strip() for block in blocks if block.strip())
